@@ -3,7 +3,7 @@ name: CI Automated testing
 on:
   push:
     branches: [ python3 ]
-
+    
 jobs:
 
   build:
