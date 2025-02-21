@@ -37,7 +37,6 @@ import version
 import util.paths as paths
 import util.ExceptionHandler
 from util.misc import InstallLocalRessources
-from docutil.docpdf import open_pdf
 from IDEFrame import IDEFrame, AppendMenu
 from IDEFrame import \
     TITLE, \
@@ -128,26 +127,17 @@ class PLCOpenEditor(IDEFrame):
                                (ID_PLCOPENEDITORFILEMENUGENERATE, "Build", _('Generate Program'), None)])
 
     def _init_coll_HelpMenu_Items(self, parent):
-        AppendMenu(parent, help='', id=wx.ID_HELP,
-                   kind=wx.ITEM_NORMAL, text=_('PLCOpenEditor') + '\tF1')
-        # AppendMenu(parent, help='', id=wx.ID_HELP_CONTENTS,
-        #      kind=wx.ITEM_NORMAL, text=u'PLCOpen\tF2')
-        # AppendMenu(parent, help='', id=wx.ID_HELP_CONTEXT,
-        #      kind=wx.ITEM_NORMAL, text=u'IEC 61131-3\tF3')
-
         def handler(event):
             return wx.MessageBox(
                 version.GetCommunityHelpMsg(),
                 _('Community support'),
                 wx.OK | wx.ICON_INFORMATION)
 
-        menu_entry = parent.Append(help='', id=wx.ID_ANY, kind=wx.ITEM_NORMAL, text=_('Community support'))
+        menu_entry = parent.Append(wx.ID_ANY, _('Community support'), '')
         self.Bind(wx.EVT_MENU, handler, menu_entry)
 
-        AppendMenu(parent, help='', id=wx.ID_ABOUT,
-                   kind=wx.ITEM_NORMAL, text=_('About'))
-        self.Bind(wx.EVT_MENU, self.OnPLCOpenEditorMenu, id=wx.ID_HELP)
-        # self.Bind(wx.EVT_MENU, self.OnPLCOpenMenu, id=wx.ID_HELP_CONTENTS)
+        parent.Append(wx.MenuItem(helpString='', id=wx.ID_ABOUT,
+                   kind=wx.ITEM_NORMAL, text=_('About')))
         self.Bind(wx.EVT_MENU, self.OnAboutMenu, id=wx.ID_ABOUT)
 
     def __init__(self, parent, fileOpen=None):
@@ -187,7 +177,6 @@ class PLCOpenEditor(IDEFrame):
 
     def OnCloseFrame(self, event):
         if self.Controler is None or self.CheckSaveBeforeClosing(_("Close Application")):
-            self.AUIManager.UnInit()
 
             self.SaveLastState()
 
@@ -283,7 +272,7 @@ class PLCOpenEditor(IDEFrame):
 
         result = None
 
-        dialog = wx.FileDialog(self, _("Choose a file"), directory, "",  _("PLCOpen files (*.xml)|*.xml|All files|*.*"), wx.OPEN)
+        dialog = wx.FileDialog(self, _("Choose a file"), directory, "",  _("PLCOpen files (*.xml)|*.xml|All files|*.*"), wx.FD_OPEN)
         if dialog.ShowModal() == wx.ID_OK:
             filepath = dialog.GetPath()
             if os.path.isfile(filepath):
@@ -325,7 +314,7 @@ class PLCOpenEditor(IDEFrame):
         self.GenerateProgramAs()
 
     def GenerateProgramAs(self):
-        dialog = wx.FileDialog(self, _("Choose a file"), os.getcwd(), os.path.basename(self.Controler.GetProgramFilePath()),  _("ST files (*.st)|*.st|All files|*.*"), wx.SAVE | wx.CHANGE_DIR)
+        dialog = wx.FileDialog(self, _("Choose a file"), os.getcwd(), os.path.basename(self.Controler.GetProgramFilePath()),  _("ST files (*.st)|*.st|All files|*.*"), wx.FD_SAVE | wx.FD_CHANGE_DIR)
         if dialog.ShowModal() == wx.ID_OK:
             self.GenerateProgram(dialog.GetPath())
         dialog.Destroy()
@@ -348,12 +337,6 @@ class PLCOpenEditor(IDEFrame):
         message = wx.MessageDialog(self, message_text, header, wx.OK | icon)
         message.ShowModal()
         message.Destroy()
-
-    def OnPLCOpenEditorMenu(self, event):
-        wx.MessageBox(_("No documentation available.\nComing soon."))
-
-    def OnPLCOpenMenu(self, event):
-        open_pdf(os.path.join(beremiz_dir, "plcopen", "TC6_XML_V101.pdf"))
 
     def OnAboutMenu(self, event):
         info = wx.adv.AboutDialogInfo()

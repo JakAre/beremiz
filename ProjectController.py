@@ -46,7 +46,7 @@ import wx
 
 import features
 import connectors
-import util.paths as paths
+import util.paths as pathutils
 from util.misc import CheckPathPerm, GetClassImporter
 from util.MiniTextControler import MiniTextControler
 from util.ProcessLogger import ProcessLogger
@@ -65,7 +65,6 @@ from runtime import PlcStatus
 from ConfigTreeNode import ConfigTreeNode, XSDSchemaErrorMessage
 from POULibrary import UserAddressedException
 
-base_folder = paths.AbsParentDir(__file__)
 
 MATIEC_ERROR_MODEL = re.compile(
     r".*\.st:(\d+)-(\d+)\.\.(\d+)-(\d+): (?:error)|(?:warning) : (.*)$")
@@ -116,7 +115,7 @@ class Iec2CSettings(object):
     def findCmd(self):
         cmd = "iec2c" + (".exe" if os.name == 'nt' else "")
         paths = [
-            os.path.join(base_folder, "matiec")
+            pathutils.ThirdPartyPath("matiec")
         ]
         path = self.findObject(
             paths, lambda p: os.path.isfile(os.path.join(p, cmd)))
@@ -129,7 +128,7 @@ class Iec2CSettings(object):
 
     def findLibPath(self):
         paths = [
-            os.path.join(base_folder, "matiec", "lib"),
+            pathutils.ThirdPartyPath("matiec", "lib"),
             "/usr/lib/matiec"
         ]
         path = self.findObject(
@@ -279,6 +278,9 @@ class ProjectController(ConfigTreeNode, PLCControler):
 
         self.IECcodeDigest = None
         self.LastBuiltIECcodeDigest = None
+
+        # compute CFLAGS for PLC code
+        self.plcCFLAGS = '"-I%s" -Wno-unused-function' % os.path.abspath(self.iec2c_cfg.getLibCPath())
 
     def LoadLibraries(self):
         self.Libraries = OrderedDict()
@@ -508,6 +510,9 @@ class ProjectController(ConfigTreeNode, PLCControler):
         self._setBuildPath(BuildPath)
         # get confnodes bloclist (is that usefull at project creation?)
         self.RefreshConfNodesBlockLists()
+        # default scaling
+        for iec_lang in ["FBD", "LD", "SFC"]:
+            PLCControler.SetProjectProperties(self, properties={"scaling": {iec_lang: (8, 8)}})
         # this will create files base XML files
         self.SaveProject()
         return None
@@ -654,12 +659,10 @@ class ProjectController(ConfigTreeNode, PLCControler):
         if len(self.Libraries) == 0:
             return [], [], ()
         self.GetIECProgramsAndVariables()
-        LibIECCflags = '"-I%s" -Wno-unused-function' % os.path.abspath(
-            self.GetIECLibPath())
         LocatedCCodeAndFlags = []
         Extras = []
         for lib in self.Libraries.values():
-            res = lib.Generate_C(buildpath, self._VariablesList, LibIECCflags)
+            res = lib.Generate_C(buildpath, self._VariablesList, self.plcCFLAGS)
             LocatedCCodeAndFlags.append(res[:2])
             if len(res) > 2:
                 Extras.extend(res[2:])
@@ -936,8 +939,6 @@ class ProjectController(ConfigTreeNode, PLCControler):
         self.PLCGeneratedLocatedVars = self.GetLocations()
         # Keep track of generated C files for later use by self.CTNGenerate_C
         self.PLCGeneratedCFiles = C_files
-        # compute CFLAGS for plc
-        self.plcCFLAGS = '"-I%s" -Wno-unused-function' % self.iec2c_cfg.getLibCPath()
 
         self.LastBuiltIECcodeDigest = self.IECcodeDigest
 
@@ -1251,13 +1252,6 @@ class ProjectController(ConfigTreeNode, PLCControler):
                 _("Runtime IO extensions C code generation failed !\n"))
             self.logger.write_error(traceback.format_exc())
             return False
-
-        # Extensions also need plcCFLAGS in case they include beremiz.h
-        CTNLocationCFilesAndCFLAGS = [
-            (loc, [
-                (code, self.plcCFLAGS+" "+cflags)
-                for code,cflags in code_and_cflags], do_calls)
-            for loc, code_and_cflags, do_calls in CTNLocationCFilesAndCFLAGS]
 
         self.LocationCFilesAndCFLAGS = LibCFilesAndCFLAGS + \
             CTNLocationCFilesAndCFLAGS
@@ -1916,6 +1910,10 @@ class ProjectController(ConfigTreeNode, PLCControler):
             # Oups.
             self.logger.write_error(_("Connection failed to %s!\n") % uri)
         else:
+            VersionsInfoBytes = self._connector.ExtendedCall("GetVersions", bytes())
+            if VersionsInfoBytes is not None:
+                VersionsInfo = VersionsInfoBytes.decode()
+                self.logger.write(f"Version string: {VersionsInfo}\n")
             self.CompareLocalAndRemotePLC()
 
             # Init with actual PLC status and print it

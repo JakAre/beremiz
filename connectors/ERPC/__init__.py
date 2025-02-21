@@ -22,6 +22,7 @@ from erpc_interface.erpc_PLCObject.common import trace_order, extra_file, PLCsta
 import PSKManagement as PSK
 from connectors.ERPC.PSK_Adapter import SSLPSKClientTransport
 from connectors.ConnectorBase import ConnectorBase
+from connectors.ERPC_URI import per_scheme_model
 
 enum_to_PLCstatus = dict(map(lambda t:(t[1],t[0]),getmembers(PLCstatus_enum, lambda x:type(x)==int)))
 
@@ -61,6 +62,7 @@ ReturnWrappers = {
     "SeedBlob":ReturnAsLastOutput,
     "SetTraceVariablesList": ReturnAsLastOutput,
     "StopPLC":ReturnAsLastOutput,
+    "ExtendedCall":ReturnAsLastOutput,
 }
 
 ArgsWrappers = {
@@ -73,6 +75,36 @@ ArgsWrappers = {
             for idx, force in orders],)
 }
 
+def rpc_wrapper(method_name, confnodesroot):
+    client_method = getattr(BeremizPLCObjectServiceClient, method_name)
+    return_wrapper = ReturnWrappers.get(
+        method_name, 
+        lambda client_method, obj, args_wrapper, *args: client_method(obj, *args_wrapper(*args)))
+    args_wrapper = ArgsWrappers.get(method_name, lambda *x:x)
+
+    def exception_wrapper(self, *args):
+        try:
+            return return_wrapper(client_method, self, args_wrapper, *args)
+        except erpc.transport.ConnectionClosed as e:
+            confnodesroot._SetConnector(None)
+            confnodesroot.logger.write_error(_("Connection lost!\n"))
+        except erpc.codec.CodecError as e:
+            confnodesroot.logger.write_warning(_("ERPC codec error: %s\n") % e)
+        except erpc.client.RequestError as e:
+            confnodesroot.logger.write_error(_("ERPC request error: %s\n") % e)                
+        except MissingCallException as e:
+            confnodesroot.logger.write_warning(_("Remote call not supported: %s\n") % e)
+        except Exception as e:
+            errmess = _("Exception calling remote PLC object fucntion %s:\n") % method_name \
+                        + traceback.format_exc()
+            confnodesroot.logger.write_error(errmess + "\n")
+            confnodesroot._SetConnector(None)
+
+        return self.PLCObjDefaults.get(method_name)
+    return exception_wrapper
+
+
+
 def ERPC_connector_factory(uri, confnodesroot):
     """
     returns the ERPC connector
@@ -83,92 +115,71 @@ def ERPC_connector_factory(uri, confnodesroot):
     # ERPC:///dev/ttyXX:baudrate or ERPC://:COM4:baudrate
 
     try:
-        _scheme, location = uri.split("://",1)
-        locator, *IDhash = location.split('#',1)
-        x = re.match(r'(?P<host>[^\s:]+):?(?P<port>\d+)?', locator)
-        host = x.group('host')
-        port = x.group('port')
-        if port:
-            port = int(port)
-        else:
-            # default port depends on security
-            port = 4000 if IDhash else 3000
-
-        if not IDhash and _scheme=="ERPCS":
-            confnodesroot.logger.write_error(
-                f'Invalid URI "{uri}": ERPCS requires PLC ID after "#"\n')
-            return None
-        elif IDhash and _scheme!="ERPCS":
-            confnodesroot.logger.write_error(
-                f'URI "{uri}": Non-encrypted ERPC does not take a PLC ID after "#"\n')
-            return None
-
+        scheme, location = uri.split("://",1)
+        _model, _useID, parser, _builder = per_scheme_model[scheme]
+        location_data = parser(location)
     except Exception as e:
         confnodesroot.logger.write_error(
             'Malformed URI "%s": %s\n' % (uri, str(e)))
         return None
 
-    def rpc_wrapper(method_name):
-        client_method = getattr(BeremizPLCObjectServiceClient, method_name)
-        return_wrapper = ReturnWrappers.get(
-            method_name, 
-            lambda client_method, obj, args_wrapper, *args: client_method(obj, *args_wrapper(*args)))
-        args_wrapper = ArgsWrappers.get(method_name, lambda *x:x)
-
-        def exception_wrapper(self, *args):
-            try:
-                return return_wrapper(client_method, self, args_wrapper, *args)
-            except erpc.transport.ConnectionClosed as e:
-                confnodesroot._SetConnector(None)
-                confnodesroot.logger.write_error(_("Connection lost!\n"))
-            except erpc.codec.CodecError as e:
-                confnodesroot.logger.write_warning(_("ERPC codec error: %s\n") % e)
-            except erpc.client.RequestError as e:
-                confnodesroot.logger.write_error(_("ERPC request error: %s\n") % e)                
-            except MissingCallException as e:
-                confnodesroot.logger.write_warning(_("Remote call not supported: %s\n") % e)
-            except Exception as e:
-                errmess = _("Exception calling remote PLC object fucntion %s:\n") % method_name \
-                          + traceback.format_exc()
-                confnodesroot.logger.write_error(errmess + "\n")
-                confnodesroot._SetConnector(None)
-
-            return self.PLCObjDefaults.get(method_name)
-        return exception_wrapper
-
-
     PLCObjectERPCProxy = type(
         "PLCObjectERPCProxy",
         (ConnectorBase, BeremizPLCObjectServiceClient),
-        {name: rpc_wrapper(name)
+        {name: rpc_wrapper(name, confnodesroot)
             for name,_func in getmembers(IBeremizPLCObjectService, isfunction)})
 
-    try:
-        if IDhash:
-            ID = IDhash[0]
-            # load PSK from project
-            secpath = os.path.join(confnodesroot.ProjectPath, 'psk', ID + '.secret')
-            if not os.path.exists(secpath):
+    if scheme in ["ERPCS", "ERPC"]:
+        if scheme=="ERPCS":
+            ID = location_data["ID"]
+            if not ID:
                 confnodesroot.logger.write_error(
-                    'Error: Pre-Shared-Key Secret in %s is missing!\n' % secpath)
+                    f'Invalid URI "{uri}": ERPCS requires PLC ID after "#"\n')
                 return None
-            secret = open(secpath).read().partition(':')[2].rstrip('\n\r').encode()
-            transport = SSLPSKClientTransport(host, port, (secret, ID.encode()))
+            default_port = 4000
         else:
-            # TODO if serial URI then 
-            # transport = erpc.transport.SerialTransport(device, baudrate)
+            ID = None
+            if "#" in location:
+                confnodesroot.logger.write_error(
+                    f'URI "{uri}": Non-encrypted ERPC does not take a PLC ID after "#"\n')
+                return None
+            default_port = 3000
 
-            transport = erpc.transport.TCPTransport(host, port, False)
+        host = location_data["host"]
+        port = location_data["port"]
+        port = int(port) if port else default_port
 
-        clientManager = erpc.client.ClientManager(transport, erpc.basic_codec.BasicCodec)
-        client = PLCObjectERPCProxy(clientManager)
+        try:
+            if ID:
+                # load PSK from project
+                secpath = os.path.join(confnodesroot.ProjectPath, 'psk', ID + '.secret')
+                if not os.path.exists(secpath):
+                    confnodesroot.logger.write_error(
+                        'Error: Pre-Shared-Key Secret in %s is missing!\n' % secpath)
+                    return None
+                secret = open(secpath).read().partition(':')[2].rstrip('\n\r').encode()
+                transport = SSLPSKClientTransport(host, port, (secret, ID.encode())) # type: ignore
+            else:
 
-    except Exception as e:
+                transport = erpc.transport.TCPTransport(host, port, False)
+
+            clientManager = erpc.client.ClientManager(transport, erpc.basic_codec.BasicCodec)
+            client = PLCObjectERPCProxy(clientManager)
+
+        except Exception as e:
+            confnodesroot.logger.write_error(
+                _("Connection to {loc} failed with exception {ex}\n").format(
+                    loc=uri, ex=str(e)))
+            return None
+
+    else:
+        # TODO if serial URI then 
+        # transport = erpc.transport.SerialTransport(device, baudrate)
+
         confnodesroot.logger.write_error(
-            _("Connection to {loc} failed with exception {ex}\n").format(
-                loc=locator, ex=str(e)))
+            _("Unknown scheme {scheme} in URI {uri}\n").format(
+                scheme=scheme, uri=uri))
         return None
-
     # Check connection is effective.
     IDPSK = client.GetPLCID()
     if IDPSK:

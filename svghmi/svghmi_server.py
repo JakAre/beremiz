@@ -174,7 +174,6 @@ class Watchdog(object):
         self.lock = RLock()
         self.initial_timeout = initial_timeout
         self.interval = interval
-        self.callback = callback
         with self.lock:
             self._start()
 
@@ -254,7 +253,7 @@ def SendThreadProc():
     size = ctypes.c_uint32()
     ptr = ctypes.c_void_p()
     res = 0
-    while svghmi_continue_collect:
+    while svghmi_continue_collect.value:
         svghmi_wait()
         for svghmi_session in svghmi_session_manager.iter_sessions():
             res = svghmi_send_collect(
@@ -310,9 +309,9 @@ def waitpid_timeout(proc, helpstr="", timeout = 3):
     def waitpid_timeout_loop(proc = proc, timeout = timeout):
         try:
             while proc.poll() is None:
-                time.sleep(1)
-                timeout = timeout - 1
-                if not timeout:
+                time.sleep(.1)
+                timeout = timeout - .1
+                if timeout <= 0:
                     GetPLCObjectSingleton().LogMessage(
                         LogLevelsDict["WARNING"], 
                         "Timeout waiting for {} PID: {}".format(helpstr, str(proc.pid)))
@@ -320,5 +319,5 @@ def waitpid_timeout(proc, helpstr="", timeout = 3):
         except OSError:
             # workaround exception "OSError: [Errno 10] No child processes"
             pass
-    Thread(target=waitpid_timeout_loop, name="Zombie hunter").start()
+    waitpid_timeout_loop()
 

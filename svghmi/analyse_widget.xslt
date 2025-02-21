@@ -245,23 +245,6 @@
     <xsl:apply-templates mode="genlabel" select="path"/>
   </xsl:template>
   <xsl:variable name="hmi_elements" select="//svg:*[starts-with(@inkscape:label, 'HMI:')]"/>
-  <xsl:template match="widget[@type='AnimateRotation']" mode="widget_desc">
-    <type>
-      <xsl:value-of select="@type"/>
-    </type>
-    <longdesc>
-      <xsl:text>AnimateRotation - DEPRECATED, do not use.
-</xsl:text>
-      <xsl:text>Doesn't follow WYSIWYG principle, and forces user to add animateTransform tag in SVG (using inkscape XML editor for exemple)
-</xsl:text>
-    </longdesc>
-    <shortdesc>
-      <xsl:text>AnimateRotation - DEPRECATED</xsl:text>
-    </shortdesc>
-    <path name="speed" accepts="HMI_INT,HMI_REAL">
-      <xsl:text>speed</xsl:text>
-    </path>
-  </xsl:template>
   <xsl:template match="widget[@type='Assign']" mode="widget_desc">
     <type>
       <xsl:value-of select="@type"/>
@@ -304,6 +287,12 @@
     </type>
     <longdesc>
       <xsl:text>Back widget brings focus back to previous page in history when clicked.
+</xsl:text>
+      <xsl:text>
+</xsl:text>
+      <xsl:text>"active" + "inactive" labeled elements can be provided and reflect whether
+</xsl:text>
+      <xsl:text>widget is pressed or not.
 </xsl:text>
     </longdesc>
     <shortdesc>
@@ -399,47 +388,6 @@
       <xsl:text>minimum value</xsl:text>
     </arg>
     <arg name="max" count="optional" accepts="int,real">
-      <xsl:text>maximum value</xsl:text>
-    </arg>
-    <path name="value" accepts="HMI_INT,HMI_REAL">
-      <xsl:text>Value to display</xsl:text>
-    </path>
-  </xsl:template>
-  <xsl:template match="widget[@type='CircularSlider']" mode="widget_desc">
-    <type>
-      <xsl:value-of select="@type"/>
-    </type>
-    <longdesc>
-      <xsl:text>CircularSlider - DEPRECATED, to be replaced by PathSlider
-</xsl:text>
-      <xsl:text>This widget moves "handle" labeled group along "range" labeled
-</xsl:text>
-      <xsl:text>arc, according to value of the single accepted variable.
-</xsl:text>
-      <xsl:text>
-</xsl:text>
-      <xsl:text>If "min" a "max" labeled texts are provided, or if first and second
-</xsl:text>
-      <xsl:text>argument are given, then they are used as respective minimum and maximum
-</xsl:text>
-      <xsl:text>value. Otherwise, value is expected to be in between 0 and 100.
-</xsl:text>
-      <xsl:text>
-</xsl:text>
-      <xsl:text>If "value" labeled text is found, then its content is replaced by value.
-</xsl:text>
-      <xsl:text>During drag, "setpoint" labeled group is moved to position defined by user
-</xsl:text>
-      <xsl:text>while "handle" reflects current value from variable.
-</xsl:text>
-    </longdesc>
-    <shortdesc>
-      <xsl:text>CircularSlider - DEPRECATED</xsl:text>
-    </shortdesc>
-    <arg name="min" count="optional" accepts="int,real">
-      <xsl:text>minimum value</xsl:text>
-    </arg>
-    <arg name="min" count="optional" accepts="int,real">
       <xsl:text>maximum value</xsl:text>
     </arg>
     <path name="value" accepts="HMI_INT,HMI_REAL">
@@ -559,7 +507,7 @@
     <longdesc>
       <xsl:text>ForEach widget is used to span a small set of widget over a larger set of
 </xsl:text>
-      <xsl:text>repeated HMI_NODEs. 
+      <xsl:text>repeated HMI_NODEs.
 </xsl:text>
       <xsl:text>
 </xsl:text>
@@ -587,6 +535,12 @@
 </xsl:text>
       <xsl:text>"ClassName:+/-number".
 </xsl:text>
+      <xsl:text>
+</xsl:text>
+      <xsl:text>In case of "ClassName:offset", offset for first element is 1.
+</xsl:text>
+      <xsl:text>
+</xsl:text>
     </longdesc>
     <shortdesc>
       <xsl:text>span widgets over a set of repeated HMI_NODEs</xsl:text>
@@ -597,6 +551,29 @@
     <path name="root" accepts="HMI_NODE">
       <xsl:text> where to find HMI_NODEs whose HMI_CLASS is class_name</xsl:text>
     </path>
+    <path name="position" accepts="HMI_INT">
+      <xsl:text>position of HMI_NODE mapped to first item, among similar siblings</xsl:text>
+    </path>
+    <path name="range" accepts="HMI_INT" count="optional">
+      <xsl:text> count of HMI_NODE siblings</xsl:text>
+    </path>
+    <path name="size" accepts="HMI_INT" count="optional">
+      <xsl:text> count of visible items</xsl:text>
+    </path>
+  </xsl:template>
+  <xsl:template match="widget[@type='Image']" mode="widget_desc">
+    <type>
+      <xsl:value-of select="@type"/>
+    </type>
+    <longdesc>
+      <xsl:text>If Image widget is a svg:image element, then href content is replaced by
+</xsl:text>
+      <xsl:text>value of given variable.
+</xsl:text>
+    </longdesc>
+    <shortdesc>
+      <xsl:text>Image display</xsl:text>
+    </shortdesc>
   </xsl:template>
   <xsl:template match="widget[@type='Input']" mode="widget_desc">
     <type>
@@ -641,7 +618,7 @@
 </xsl:text>
       <xsl:text>
 </xsl:text>
-      <xsl:text>Documentation to be written. see svghmi exemple.
+      <xsl:text>Documentation to be written. see svghmi example.
 </xsl:text>
     </longdesc>
     <shortdesc>
@@ -665,7 +642,7 @@
 </xsl:text>
       <xsl:text>
 </xsl:text>
-      <xsl:text>If first path is pointint to HMI_NODE variable is used as new reference
+      <xsl:text>If first path is pointing to HMI_NODE variable is used as new reference
 </xsl:text>
       <xsl:text>when jumping to a relative page.
 </xsl:text>
@@ -927,27 +904,6 @@
     </longdesc>
     <shortdesc>
       <xsl:text>ScrollBar</xsl:text>
-    </shortdesc>
-    <path name="value" accepts="HMI_INT">
-      <xsl:text>value</xsl:text>
-    </path>
-    <path name="range" accepts="HMI_INT">
-      <xsl:text>range</xsl:text>
-    </path>
-    <path name="visible" accepts="HMI_INT">
-      <xsl:text>visible</xsl:text>
-    </path>
-  </xsl:template>
-  <xsl:template match="widget[@type='Slider']" mode="widget_desc">
-    <type>
-      <xsl:value-of select="@type"/>
-    </type>
-    <longdesc>
-      <xsl:text>Slider - DEPRECATED - use ScrollBar or PathSlider instead
-</xsl:text>
-    </longdesc>
-    <shortdesc>
-      <xsl:text>Slider - DEPRECATED - use ScrollBar instead</xsl:text>
     </shortdesc>
     <path name="value" accepts="HMI_INT">
       <xsl:text>value</xsl:text>

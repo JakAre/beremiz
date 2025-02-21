@@ -103,6 +103,9 @@ class PLCObject(object):
         self.PlcStopped.set()
 
         self._init_blobs()
+        
+        # initialize extended calls with GetVersions call, ignoring arguments
+        self.extended_calls = {"GetVersions":lambda *_args:self.GetVersions().encode()}
 
     # First task of worker -> no @RunInMain
     def AutoLoad(self, autostart):
@@ -204,7 +207,7 @@ class PLCObject(object):
             self._PythonIterator = getattr(self.PLClibraryHandle, "PythonIterator", None)
             if self._PythonIterator is not None:
                 self._PythonIterator.restype = ctypes.c_char_p
-                self._PythonIterator.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
+                self._PythonIterator.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_int)]
 
                 self._stopPLC = self._stopPLC_real
             else:
@@ -212,7 +215,7 @@ class PLCObject(object):
                 # as a call that block pythonthread until StopPLC
                 self.PlcStopping = Event()
 
-                def PythonIterator(res, blkid):
+                def PythonIterator(res, blkid, is_last):
                     self.PlcStopping.clear()
                     self.PlcStopping.wait()
                     return None
@@ -304,7 +307,7 @@ class PLCObject(object):
         self._GetDebugData = lambda: -1
         self._suspendDebug = lambda x: -1
         self._resumeDebug = lambda: None
-        self._PythonIterator = lambda: ""
+        self._PythonIterator = lambda *a: ""
         self._GetLogCount = None
         self._LogMessage = None
         self._GetLogMessage = None
@@ -386,7 +389,8 @@ class PLCObject(object):
             "WorkingDir":     self.workingdir,
             "PLCObject":      self,
             "PLCBinary":      self.PLClibraryHandle,
-            "PLCGlobalsDesc": []})
+            "PLCGlobalsDesc": [],
+            "OnIdle":         []})
 
         for methodname in MethodNames:
             self.python_runtime_vars["_runtime_%s" % methodname] = []
@@ -426,11 +430,12 @@ class PLCObject(object):
         self.python_runtime_vars = None
 
     def PythonThreadLoop(self):
-        res, cmd, blkid = "None", "None", ctypes.c_void_p()
+        res, cmd, blkid, is_last = "None", "None", ctypes.c_void_p(), ctypes.c_int()
         compile_cache = {}
         while True:
-            cmd = self._PythonIterator(res.encode(), blkid)
+            cmd = self._PythonIterator(res.encode(), blkid, ctypes.byref(is_last))
             FBID = blkid.value
+            GOING_IDLE = is_last.value != 0
             if cmd is None:
                 break
             cmd = cmd.decode()
@@ -451,6 +456,11 @@ class PLCObject(object):
             except Exception as e:
                 res = "#EXCEPTION : "+str(e)
                 self.LogMessage(1, ('PyEval@0x%x(Code="%s") Exception "%s"') % (FBID, cmd, str(e)))
+
+            if GOING_IDLE:
+                todo = self.python_runtime_vars["OnIdle"]
+                while todo:
+                    todo.pop(0)()
 
     def PythonThreadProc(self):
         while True:
@@ -588,10 +598,25 @@ class PLCObject(object):
         return getPSKID(partial(self.LogMessage, 0))
 
     def _init_blobs(self):
-        self.blobs = {}
+        self.blobs = {}  # dict of list
         if os.path.exists(self.tmpdir):
             shutil.rmtree(self.tmpdir)
         os.mkdir(self.tmpdir)
+
+    def _append_blob(self, blob, newBlobID):
+        self.blobs.setdefault(newBlobID,[]).append(blob)
+
+    def _pop_blob(self, blobID):
+        blobs = self.blobs.pop(blobID, None)
+
+        if blobs is None:
+            return None
+
+        blob = blobs.pop()
+        if blobs:
+            # insert same blob list back if not empty
+            blobs = self.blobs[blobID] = blobs
+        return blob
 
     @RunInMain
     def SeedBlob(self, seed):
@@ -599,35 +624,33 @@ class PLCObject(object):
         _fd, _path, md5sum = blob
         md5sum.update(seed)
         newBlobID = md5sum.digest()
-        self.blobs[newBlobID] = blob
+        self._append_blob(blob, newBlobID)
         return newBlobID
 
     @RunInMain
     def AppendChunkToBlob(self, data, blobID):
-        blob = self.blobs.pop(blobID, None)
-
-        if blob is None:
-            return None
+        blob = self._pop_blob(blobID)
 
         fd, _path, md5sum = blob
         md5sum.update(data)
         newBlobID = md5sum.digest()
         os.write(fd, data)
-        self.blobs[newBlobID] = blob
+        self._append_blob(blob, newBlobID)
         return newBlobID
 
     @RunInMain
     def PurgeBlobs(self):
-        for fd, _path, _md5sum in list(self.blobs.values()):
-            os.close(fd)
+        for blobs in list(self.blobs.values()):
+            for fd, _path, _md5sum in blobs:
+                os.close(fd)
         self._init_blobs()
 
     def BlobAsFile(self, blobID, newpath):
-        blob = self.blobs.pop(blobID, None)
+        blob = self._pop_blob(blobID)
 
         if blob is None:
             raise Exception(
-                _(f"Missing data to create file: {newpath}").decode())
+                _(f"Missing data to create file: {newpath}"))
 
         self._BlobAsFile(blob, newpath)
 
@@ -818,16 +841,17 @@ class PLCObject(object):
 
         self.TraceThread = None
 
-    def RemoteExec(self, script, *kwargs):
-        try:
-            exec(script, kwargs)
-        except Exception:
-            _e_type, e_value, e_traceback = sys.exc_info()
-            line_no = traceback.tb_lineno(get_last_traceback(e_traceback))
-            return (-1, "RemoteExec script failed!\n\nLine %d: %s\n\t%s" %
-                    (line_no, e_value, script.splitlines()[line_no - 1]))
-        return (0, kwargs.get("returnVal", None))
-
     def GetVersions(self):
         return platform_module.system() + " " + platform_module.release()
+
+    @RunInMain
+    def ExtendedCall(self, method, argument):
+        """ Dispatch argument to registered service """
+        return self.extended_calls[method](argument)
+
+    def RegisterExtendedCall(self, method, callback):
+        self.extended_calls[method] = callback
+
+    def UnregisterExtendedCall(self, method):
+        del self.extended_calls[method]
 

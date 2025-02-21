@@ -17,6 +17,7 @@ INCLUDES += $(ERPC_C_ROOT)/infra \
             $(ERPC_ROOT)/test/common/config \
             $(ERPC_ROOT)/erpcgen/src \
             $(BEREMIZ_ROOT)/targets \
+            $(RUNTIME_ROOT)/service \
             $(MATIEC_ROOT)/lib/C
 
 INCLUDES := $(foreach includes, $(INCLUDES), -I $(includes))
@@ -31,6 +32,7 @@ ERPC_SOURCES += $(ERPC_ROOT)/erpcgen/src/format_string.cpp \
                 $(ERPC_C_ROOT)/infra/erpc_server.cpp \
                 $(ERPC_C_ROOT)/infra/erpc_simple_server.cpp \
                 $(ERPC_C_ROOT)/infra/erpc_framed_transport.cpp \
+                $(ERPC_C_ROOT)/infra/erpc_nocrc_framed_transport.cpp \
                 $(ERPC_C_ROOT)/infra/erpc_message_buffer.cpp \
                 $(ERPC_C_ROOT)/infra/erpc_message_loggers.cpp \
                 $(ERPC_C_ROOT)/infra/erpc_transport_arbitrator.cpp \
@@ -41,9 +43,9 @@ ERPC_SOURCES += $(ERPC_ROOT)/erpcgen/src/format_string.cpp \
                 $(ERPC_C_ROOT)/transports/erpc_serial_transport.cpp \
                 $(ERPC_C_ROOT)/transports/erpc_tcp_transport.cpp
 			
-SOURCES +=  $(RUNTIME_ROOT)/erpc_PLCObject_client.cpp \
-            $(RUNTIME_ROOT)/erpc_PLCObject_interface.cpp \
-            $(RUNTIME_ROOT)/erpc_PLCObject_server.cpp \
+SOURCES +=  $(RUNTIME_ROOT)/service/erpc_PLCObject_client.cpp \
+            $(RUNTIME_ROOT)/service/erpc_PLCObject_interface.cpp \
+            $(RUNTIME_ROOT)/service/erpc_PLCObject_server.cpp \
 			$(RUNTIME_ROOT)/md5.cpp \
 			$(RUNTIME_ROOT)/blob.cpp \
 			$(RUNTIME_ROOT)/posix_main.cpp \

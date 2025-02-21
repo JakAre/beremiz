@@ -46,11 +46,15 @@ def AbsParentDir(file, level=1):
         path = os.path.dirname(path)
     return path
 
-def ThirdPartyPath(name):
+def ThirdPartyPath(name, *suffixes):
     """
     Return folder where to find sibling projects like Modbus, CanFestival, BACnet
     """
-    return os.path.join(AbsParentDir(__file__, 2), name)
+    env_name = name.upper() + "_PATH"
+    if env_name in os.environ:
+        return os.path.join(os.environ[env_name], *suffixes)
+    
+    return os.path.join(AbsParentDir(__file__, 2), name, *suffixes)
 
 def Bpath(*names):
     """

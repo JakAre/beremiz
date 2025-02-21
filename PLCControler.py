@@ -1373,14 +1373,15 @@ class PLCControler(object):
         return False
 
     def IsEndType(self, typename):
-        if typename is not None:
+        # Check if the type is a base type        
+        if type(typename) == str:
             return not typename.startswith("ANY")
         return True
 
     def IsLocatableDataType(self, datatype, debug=False):
         basetype_content = datatype.baseType.getcontent()
         basetype_content_type = basetype_content.getLocalTag()
-        if basetype_content_type in ["enum", "struct"]:
+        if basetype_content_type in ["enum"]:
             return False
         elif basetype_content_type == "derived":
             return self.IsLocatableType(basetype_content.getname())

@@ -555,6 +555,8 @@ class IDEFrame(wx.Frame):
                              self.OnPouSelectedChanged)
         self.TabsOpened.Bind(wx.aui.EVT_AUINOTEBOOK_PAGE_CLOSE,
                              self.OnPageClose)
+        self.TabsOpened.Bind(wx.aui.EVT_AUINOTEBOOK_PAGE_CLOSED,
+                             self.OnPageClosed)
         self.TabsOpened.Bind(wx.aui.EVT_AUINOTEBOOK_END_DRAG,
                              self.OnPageDragged)
         self.AUIManager.AddPane(self.TabsOpened,
@@ -759,8 +761,6 @@ class IDEFrame(wx.Frame):
         self.SetRefreshFunctions()
         self.SetDeleteFunctions()
 
-        self.Bind(wx.EVT_CLOSE, self.OnCloseFrame)
-
         wx.CallAfter(self.InitFindDialog)
 
     def InitFindDialog(self):
@@ -921,8 +921,20 @@ class IDEFrame(wx.Frame):
         for element in elements:
             self.RefreshFunctions[element]()
 
+    def OnPageClosed(self, event):
+        """Callback function when AUINotebook Page closed
+
+        :param event: AUINotebook Event.
+        """
+        if self.TabsOpened.GetPageCount() == 0:
+            pane = self.AUIManager.GetPane(self.TabsOpened)
+            # on wxPython 4.1.0, AuiPaneInfo has no "IsMaximized" attribute...
+            if (not hasattr(pane, "IsMaximized")) or pane.IsMaximized():
+                self.AUIManager.RestorePane(pane)
+            self.AUIManager.Update()
+
     def OnPageClose(self, event):
-        """Callback function when AUINotebook Page closed with CloseButton
+        """Callback function when AUINotebook Page closing with CloseButton
 
         :param event: AUINotebook Event.
         """
@@ -1116,7 +1128,7 @@ class IDEFrame(wx.Frame):
             printout2 = GraphicPrintout(window, page_size, margins, True)
             preview = wx.PrintPreview(printout, printout2, data)
 
-            if preview.Ok():
+            if preview.IsOk():
                 preview_frame = wx.PreviewFrame(preview, self, _("Print preview"), style=wx.DEFAULT_FRAME_STYLE | wx.FRAME_FLOAT_ON_PARENT)
 
                 preview_frame.Initialize()
@@ -1148,9 +1160,6 @@ class IDEFrame(wx.Frame):
 
     def OnQuitMenu(self, event):
         self.Close()
-
-    def OnCloseFrame(self, event):
-        self.AUIManager.UnInit()
 
     # -------------------------------------------------------------------------------
     #                            Edit Menu Functions
@@ -1406,16 +1415,9 @@ class IDEFrame(wx.Frame):
         for child in self.TabsOpened.GetChildren():
             if isinstance(child, wx.aui.AuiTabCtrl):
                 auitabctrl.append(child)
-                if wx.VERSION >= (4, 1, 0) and child not in self.AuiTabCtrl:
+                if child not in self.AuiTabCtrl:
                     child.Bind(wx.EVT_LEFT_DCLICK, self.GetTabsOpenedDClickFunction(child))
         self.AuiTabCtrl = auitabctrl
-        # on wxPython 4.0.7, AuiManager has no "RestorePane" method...
-        if wx.VERSION >= (4, 1, 0) and self.TabsOpened.GetPageCount() == 0:
-            pane = self.AUIManager.GetPane(self.TabsOpened)
-            # on wxPython 4.1.0, AuiPaneInfo has no "IsMaximized" attribute...
-            if (not hasattr(pane, "IsMaximized")) or pane.IsMaximized():
-                self.AUIManager.RestorePane(pane)
-            self.AUIManager.Update()
 
     def EnsureTabVisible(self, tab):
         notebook = tab.GetParent()
@@ -2599,7 +2601,7 @@ class GraphicPrintout(wx.Printout):
         self.PageSize = page_size
         if self.PageSize[0] == 0 or self.PageSize[1] == 0:
             self.PageSize = (1050, 1485)
-        self.Preview = preview
+        self.IsPreview = lambda *_x : preview
         self.Margins = margins
         self.FontSize = 5
         self.TextMargin = 3
@@ -2620,9 +2622,9 @@ class GraphicPrintout(wx.Printout):
 
     def OnBeginDocument(self, startPage, endPage):
         dc = self.GetDC()
-        if not self.Preview and isinstance(dc, wx.PostScriptDC):
+        if not self.IsPreview() and isinstance(dc, wx.PostScriptDC):
             dc.SetResolution(720)
-        super(GraphicPrintout, self).OnBeginDocument(startPage, endPage)
+        return super(GraphicPrintout, self).OnBeginDocument(startPage, endPage)
 
     def OnPrintPage(self, page):
         dc = self.GetDC()
@@ -2630,21 +2632,21 @@ class GraphicPrintout(wx.Printout):
         dc.Clear()
         dc.SetUserScale(1.0, 1.0)
         dc.SetDeviceOrigin(0, 0)
-        dc.printing = not self.Preview
+        dc.printing = not self.IsPreview()
 
         # Get the size of the DC in pixels
         ppiPrinterX, ppiPrinterY = self.GetPPIPrinter()
         pw, ph = self.GetPageSizePixels()
-        dw, dh = dc.GetSizeTuple()
+        dw, dh = dc.GetSize().Get()
         Xscale = (dw * ppiPrinterX) / (pw * 25.4)
         Yscale = (dh * ppiPrinterY) / (ph * 25.4)
 
-        fontsize = self.FontSize * Yscale
+        fontsize = round(self.FontSize * Yscale)
 
-        margin_left = self.Margins[0].x * Xscale
-        margin_top = self.Margins[0].y * Yscale
-        area_width = dw - self.Margins[1].x * Xscale - margin_left
-        area_height = dh - self.Margins[1].y * Yscale - margin_top
+        margin_left = round(self.Margins[0].x * Xscale)
+        margin_top = round(self.Margins[0].y * Yscale)
+        area_width = dw - round(self.Margins[1].x * Xscale) - margin_left
+        area_height = dh - round(self.Margins[1].y * Yscale) - margin_top
 
         dc.SetPen(MiterPen(wx.BLACK))
         dc.SetBrush(wx.TRANSPARENT_BRUSH)
@@ -2667,7 +2669,7 @@ class GraphicPrintout(wx.Printout):
 
         # Set the scale and origin
         dc.SetDeviceOrigin(-posX + margin_left, -posY + margin_top)
-        dc.SetClippingRegion(posX, posY, self.PageSize[0] * scale, self.PageSize[1] * scale)
+        dc.SetClippingRegion(posX, posY, round(self.PageSize[0] * scale), round(self.PageSize[1] * scale))
         dc.SetUserScale(scale, scale)
 
         self.Viewer.DoDrawing(dc, True)

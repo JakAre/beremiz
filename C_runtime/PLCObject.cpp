@@ -344,6 +344,9 @@ uint32_t PLCObject::NewPLC(
 
 uint32_t PLCObject::LoadPLC(void)
 {
+
+    // TODO use PLCLibMutex
+
     // Load the last transferred PLC md5 hex digest
     std::string md5sum;
     try {
@@ -670,5 +673,15 @@ void PLCObject::TraceThreadProc(void)
         err == ENOMEM ? "Out of memory in TraceThreadProc" : 
         err ? "TraceThreadProc ended because of error" : 
         "TraceThreadProc ended normally");
+}
+
+uint32_t PLCObject::ExtendedCall(const char * method, const binary_t * argument, binary_t * answer)
+{
+    // TODO
+
+    answer->data = (uint8_t *)malloc(0);
+    answer->dataLength = 0;
+
+    return 0;
 }
 
